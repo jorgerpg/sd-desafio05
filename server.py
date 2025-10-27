@@ -11,7 +11,8 @@ import xmlrpc.client
 from socketserver import ThreadingMixIn
 
 DB_PATH = os.environ.get("DB_PATH", "chat.db")  # SQLite file used by the API
-LLM_RPC_URL = os.environ.get("LLM_RPC_URL", "http://localhost:9000")  # Optional bot endpoint
+LLM_RPC_URL = os.environ.get(
+    "LLM_RPC_URL", "http://localhost:9000")  # Optional bot endpoint
 
 
 def get_db():
