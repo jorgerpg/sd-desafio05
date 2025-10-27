@@ -10,9 +10,9 @@ import xmlrpc.client
 
 from socketserver import ThreadingMixIn
 
-DB_PATH = os.environ.get("DB_PATH", "chat.db")  # SQLite file used by the API
+DB_PATH = os.environ.get("DB_PATH", "chat.db")  # Caminho do SQLite persistente
 LLM_RPC_URL = os.environ.get(
-    "LLM_RPC_URL", "http://localhost:9000")  # Optional bot endpoint
+    "LLM_RPC_URL", "http://localhost:9000")  # Endpoint opcional do MotivaBot
 
 
 def get_db():
@@ -91,22 +91,27 @@ def ensure_schema(conn):
 
 # ---------- Broker simples em memória para acordar long-polls ----------
 class EventBroker:
+  """Pequeno broker em memória responsável por acordar long-polls."""
+
   def __init__(self):
-    self.conds = {}           # user_id -> threading.Condition
+    self.conds = {}           # user_id -> threading.Condition dedicado
     self.lock = threading.Lock()
 
   def _cond_for(self, user_id):
+    """Retorna (ou cria) a condition associada ao usuário."""
     with self.lock:
       if user_id not in self.conds:
         self.conds[user_id] = threading.Condition()
       return self.conds[user_id]
 
   def notify_user(self, user_id):
+    """Acorda todos os long-polls aguardando eventos para o usuário."""
     cond = self._cond_for(user_id)
     with cond:
       cond.notify_all()
 
   def wait_for_user(self, user_id, timeout):
+    """Bloqueia até que alguém chame notify_user ou o timeout expire."""
     cond = self._cond_for(user_id)
     with cond:
       cond.wait(timeout=timeout)
@@ -116,6 +121,8 @@ BROKER = EventBroker()
 
 
 class ChatService:
+  """Implementa toda a lógica de negócio exposta via XML-RPC."""
+
   def __init__(self, conn):
     self.conn = conn
     self.lock = threading.Lock()
@@ -131,6 +138,7 @@ class ChatService:
     self.broker.notify_user(user_id)
 
   def _fanout_event_message(self, conversation_id, sender_id, message_id):
+    """Enfileira eventos 'message' para todos os membros do grupo."""
     """Dispara evento 'message' para todos os membros exceto o remetente."""
     cur = self.conn.cursor()
     cur.execute("""SELECT user_id FROM conversation_members
@@ -142,11 +150,13 @@ class ChatService:
       self._add_event(uid, 'message', conversation_id, message_id)
 
   def _fanout_event_group_added(self, conversation_id, user_ids):
+    """Dispara 'group_added' para usuários recém-adicionados."""
     """Notifica usuários adicionados a um novo grupo."""
     for uid in set(user_ids):
       self._add_event(uid, 'group_added', conversation_id, None)
 
   def _fanout_event_group_removed(self, conversation_id, user_ids):
+    """Dispara 'group_removed' para quem perdeu acesso ao grupo."""
     """Notifica usuários quando um grupo deixa de existir."""
     for uid in set(user_ids):
       self._add_event(uid, 'group_removed', conversation_id, None)
@@ -207,6 +217,7 @@ class ChatService:
 
   # ---------- Grupos ----------
   def create_group(self, token, title, member_ids):
+    """Cria grupo com o autor e demais selecionados, evitando duplicados."""
     """Cria um grupo incluindo quem solicitou e todos os selecionados."""
     me = self._auth(token)
     members = set(member_ids) | {me}

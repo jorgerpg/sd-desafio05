@@ -1,4 +1,6 @@
-// ===== Config =====
+// ===== Config Geral =====
+// Tudo no client roda em JS puro, então mantemos alguns utilitários globais para
+// guardar preferências do usuário (endpoint e sessão) dentro do localStorage.
 const STORAGE_KEY_RPC = 'sdchat_rpc_url';   // onde persistimos o endpoint aprovado
 const STORAGE_KEY_SESSION = 'sdchat_session';
 const DEFAULT_RPC_URL = deriveDefaultRpcUrl();
@@ -12,6 +14,7 @@ try{
 }catch(_e){}
 
 function getStoredSession(){
+  // Recupera a sessão crua do localStorage (ou null se não existir/não parsear).
   try{
     const raw = localStorage.getItem(STORAGE_KEY_SESSION);
     return raw ? JSON.parse(raw) : null;
@@ -19,12 +22,14 @@ function getStoredSession(){
 }
 
 function saveSession(token, userId, email){
+  // Salva token + metadados junto do endpoint atual para validar depois.
   if (!token || !RPC_URL) return;
   const payload = { token, user_id: userId, email, rpc: RPC_URL };
   try{ localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(payload)); }catch(_e){}
 }
 
 function clearStoredSession(){
+  // Remove a sessão salva (logout manual ou token inválido).
   try{ localStorage.removeItem(STORAGE_KEY_SESSION); }catch(_e){}
 }
 
@@ -57,6 +62,7 @@ function openModal(){ document.getElementById('modal').classList.add('show'); }
 function closeModal(){ document.getElementById('modal').classList.remove('show'); }
 
 function resetClientState(options = {}){
+  // Limpa completamente o estado da UI e, se necessário, a sessão persistida.
   const { preserveSession = false } = options;
   if (!preserveSession) clearStoredSession();
   TOKEN = null; ME = null; USERS = []; SELECTED_FOR_GROUP.clear();
@@ -75,6 +81,7 @@ function resetClientState(options = {}){
 }
 
 function getSessionForCurrentServer(){
+  // Apenas reaproveitamos sessões vinculadas ao mesmo endpoint RPC.
   const stored = getStoredSession();
   if (!stored || !stored.rpc || !RPC_URL) return null;
   try{
@@ -83,6 +90,7 @@ function getSessionForCurrentServer(){
 }
 
 async function attemptResumeSession(stored){
+  // Tenta restaurar token + dados do usuário sem passar pela tela de login.
   const data = stored || getSessionForCurrentServer();
   if (!data || !data.token) return false;
   try{
@@ -106,11 +114,13 @@ async function attemptResumeSession(stored){
 }
 
 function deriveDefaultRpcUrl(){
+  // Usa mesmo host da página, mas força porta 8000 e caminho /RPC2.
   const proto = location.protocol.startsWith('http') ? location.protocol : 'http:';
   const host = location.hostname || 'localhost';
   return `${proto}//${host}:8000/RPC2`;
 }
 function normalizeRpcUrl(raw){
+  // Normaliza entrada do usuário (aceita "host:porta" ou URLs completas).
   let value = (raw || '').trim();
   if (!value){
     return DEFAULT_RPC_URL;
@@ -124,6 +134,7 @@ function normalizeRpcUrl(raw){
   return value;
 }
 function setRpcUrl(raw){
+  // Define endpoint ativo + salva como preferência padrão.
   const normalized = normalizeRpcUrl(raw);
   RPC_URL = normalized;
   PREFILLED_RPC_URL = normalized;
@@ -146,6 +157,7 @@ const ACTIVE_SERVER = $('#active_server');
 const CHANGE_SERVER_BTN = $('#btn_change_server');
 
 function activatePane(name, opts = {}){
+  // Apenas alterna visibilidade de cada painel principal (cards da home/chat).
   ACTIVE_PANE = name;
   PANES.forEach(p => p.classList.toggle('active', p.dataset.pane === name));
   if (!opts.skipNav){
@@ -243,6 +255,7 @@ if (CHANGE_SERVER_BTN){
 }
 
 async function tryAutoConnectFromSession(){
+  // Ao carregar a página, tentamos reconectar silenciosamente.
   const stored = getStoredSession();
   if (!stored || !stored.rpc) return;
   try{
@@ -323,6 +336,7 @@ function xmlRpcCall(method, params, endpoint){
 
 // ===== Conversas (painel) =====
 function renderConversations(convs){
+  // Lista lateral com todas as conversas do usuário logado.
   const ul = $('#convs');
   const selectedId = CURRENT_CONV ? CURRENT_CONV.id : null;
   ul.innerHTML = '';
@@ -342,6 +356,7 @@ function renderConversations(convs){
   });
 }
 async function refreshConversationsOnce(opts = {}){
+  // Atualiza o painel de conversas, com opção de propagar erro (login automático).
   const { throwOnError = false } = opts;
   try{
     const convs = await xmlRpcCall('list_my_conversations', [TOKEN]);
@@ -487,6 +502,7 @@ $('#btn_logout').onclick = () => {
 
 // ===== Usuários / Grupo =====
 function renderUsers(list){
+  // Renderiza lista de usuários para seleção/1:1; também usada no auto restore.
   USERS = list;
   const ul = $('#users'); ul.innerHTML = '';
   list.forEach(u => {
@@ -512,6 +528,7 @@ function renderUsers(list){
 }
 
 async function refreshUsers(opts = {}){
+  // Busca usuários do servidor. "silent" evita alerts ao tentar retomar sessão.
   const { silent = false, throwOnError = false } = opts;
   try{
     const r = await xmlRpcCall('list_users', [TOKEN]);
@@ -538,6 +555,7 @@ function redrawSelected(){
 }
 
 $('#btn_create_group').onclick = async () => {
+  // Botão principal do card de criação de grupo.
   const title = $('#group_title').value.trim() || 'Grupo';
   const ids = Array.from(SELECTED_FOR_GROUP);
   if(ids.length === 0){ alert('Selecione ao menos 1 usuário.'); return; }
@@ -554,6 +572,7 @@ $('#btn_create_group').onclick = async () => {
 $('#btn_list_convs').onclick = () => refreshConversationsOnce();
 
 $('#btn_send').onclick = async () => {
+  // Envia mensagem para a conversa ativa, validando campos básicos.
   const text = $('#msg_text').value;
   if (!text.trim()) return;
   try{
@@ -573,6 +592,7 @@ $('#msg_text').addEventListener('keydown', (ev) => {
 });
 
 $('#btn_delete_group').onclick = async () => {
+  // Reaproveita a lógica de leave_group (servidor apaga se ficar sem membros).
   if (!CURRENT_CONV || CURRENT_CONV.type !== 'group'){ alert('Não é grupo.'); return; }
   if (!confirm('Excluir esta conversa? Se ainda houver participantes ativos você apenas sairá do grupo.')){
     return;
