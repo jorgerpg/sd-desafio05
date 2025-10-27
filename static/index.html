@@ -7,17 +7,33 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- ===== Tela de Conexão ===== -->
+  <main id="view-connect" class="screen visible">
+    <div class="container-center">
+      <div class="card auth-card">
+        <h1 class="title">SD Chat</h1>
+        <p class="subtitle">Informe o endereço do servidor para continuar</p>
+
+        <label class="input">
+          <span>Servidor RPC</span>
+          <input id="server_url_connect" type="text" placeholder="http://meu-servidor:8000/RPC2" />
+        </label>
+
+        <button id="btn_set_server" class="btn primary full">Conectar</button>
+        <p id="connect_status" class="status-message"></p>
+      </div>
+    </div>
+  </main>
+
   <!-- ===== Tela de Login ===== -->
-  <main id="view-login" class="screen visible">
+  <main id="view-login" class="screen">
     <div class="container-center">
       <div class="card auth-card">
         <h1 class="title">SD Chat</h1>
         <p class="subtitle">Entre para começar a conversar</p>
 
-        <label class="input">
-          <span>Servidor</span>
-          <input id="server_url" type="text" placeholder="http://meu-servidor:8000/RPC2" />
-        </label>
+        <p class="server-pill">Servidor ativo: <span id="active_server">-</span></p>
+        <button id="btn_change_server" class="linklike">Alterar servidor</button>
 
         <label class="input">
           <span>Email</span>

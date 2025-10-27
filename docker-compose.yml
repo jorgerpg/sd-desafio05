@@ -7,7 +7,6 @@ services:
     # expõe as duas portas:
     ports:
       - "8000:8000" # XML-RPC (server.py)
-      - "8080:8080" # UI estática (python -m http.server)
     environment:
       # salva o banco no volume /data (persistente)
       - DB_PATH=/data/chat.db

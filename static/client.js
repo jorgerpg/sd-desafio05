@@ -1,11 +1,12 @@
 // ===== Config =====
 const STORAGE_KEY_RPC = 'sdchat_rpc_url';
 const DEFAULT_RPC_URL = deriveDefaultRpcUrl();
-let RPC_URL = DEFAULT_RPC_URL;
+let RPC_URL = null;
+let PREFILLED_RPC_URL = DEFAULT_RPC_URL;
 try{
   const stored = localStorage.getItem(STORAGE_KEY_RPC);
   if (stored){
-    RPC_URL = normalizeRpcUrl(stored);
+    PREFILLED_RPC_URL = normalizeRpcUrl(stored);
   }
 }catch(_e){}
 
@@ -58,9 +59,11 @@ function normalizeRpcUrl(raw){
 function setRpcUrl(raw){
   const normalized = normalizeRpcUrl(raw);
   RPC_URL = normalized;
+  PREFILLED_RPC_URL = normalized;
   try{
     localStorage.setItem(STORAGE_KEY_RPC, normalized);
   }catch(_e){}
+  updateServerDisplays();
   return normalized;
 }
 
@@ -68,6 +71,12 @@ function setRpcUrl(raw){
 const PANES = Array.from(document.querySelectorAll('[data-pane]'));
 const NAV_BTNS = Array.from(document.querySelectorAll('[data-pane-target]'));
 let ACTIVE_PANE = 'users';
+
+const CONNECT_INPUT = $('#server_url_connect');
+const CONNECT_BUTTON = $('#btn_set_server');
+const CONNECT_STATUS = $('#connect_status');
+const ACTIVE_SERVER = $('#active_server');
+const CHANGE_SERVER_BTN = $('#btn_change_server');
 
 function activatePane(name, opts = {}){
   ACTIVE_PANE = name;
@@ -89,16 +98,75 @@ NAV_BTNS.forEach(btn => {
 });
 activatePane('users');
 
-const SERVER_INPUT = $('#server_url');
-function syncRpcUrlFromInput(){
-  if (!SERVER_INPUT) return RPC_URL;
-  const updated = setRpcUrl(SERVER_INPUT.value);
-  SERVER_INPUT.value = updated;
-  return updated;
+function updateServerDisplays(){
+  const current = RPC_URL || PREFILLED_RPC_URL || DEFAULT_RPC_URL;
+  if (CONNECT_INPUT && document.activeElement !== CONNECT_INPUT){
+    CONNECT_INPUT.value = current;
+  }
+  if (ACTIVE_SERVER){
+    ACTIVE_SERVER.textContent = RPC_URL || '—';
+  }
 }
-if (SERVER_INPUT){
-  SERVER_INPUT.value = RPC_URL;
-  SERVER_INPUT.addEventListener('blur', syncRpcUrlFromInput);
+updateServerDisplays();
+
+function setConnectStatus(msg, type='muted'){
+  if (!CONNECT_STATUS) return;
+  CONNECT_STATUS.textContent = msg || '';
+  CONNECT_STATUS.classList.remove('error', 'success');
+  if (type === 'error') CONNECT_STATUS.classList.add('error');
+  if (type === 'success') CONNECT_STATUS.classList.add('success');
+}
+setConnectStatus('');
+
+function ensureServerConfigured(){
+  if (!RPC_URL){
+    alert('Configure o servidor antes de prosseguir.');
+    showScreen('view-connect');
+    throw new Error('SERVER_NOT_CONFIGURED');
+  }
+}
+
+async function probeServer(endpoint){
+  await xmlRpcCall('system.listMethods', [], endpoint);
+}
+
+async function handleServerConnect(){
+  if (!CONNECT_INPUT || !CONNECT_BUTTON) return;
+  const normalized = normalizeRpcUrl(CONNECT_INPUT.value);
+  CONNECT_BUTTON.disabled = true;
+  setConnectStatus('Conectando...');
+  try{
+    await probeServer(normalized);
+    setRpcUrl(normalized);
+    setConnectStatus('Servidor conectado!', 'success');
+    showScreen('view-login');
+    updateServerDisplays();
+  }catch(e){
+    console.error(e);
+    setConnectStatus('Não foi possível conectar: ' + (e.message || e), 'error');
+  }finally{
+    CONNECT_BUTTON.disabled = false;
+  }
+}
+
+if (CONNECT_BUTTON){
+  CONNECT_BUTTON.addEventListener('click', handleServerConnect);
+}
+if (CONNECT_INPUT){
+  CONNECT_INPUT.value = PREFILLED_RPC_URL;
+  CONNECT_INPUT.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter'){
+      ev.preventDefault();
+      handleServerConnect();
+    }
+  });
+}
+if (CHANGE_SERVER_BTN){
+  CHANGE_SERVER_BTN.addEventListener('click', () => {
+    showScreen('view-connect');
+    updateServerDisplays();
+    setConnectStatus('');
+  });
 }
 
 // ===== XML-RPC helpers =====
@@ -146,9 +214,11 @@ function parseXmlRpcResponse(xmlText){
   const value = doc.querySelector("methodResponse > params > param > value");
   return fromXmlValue(value);
 }
-function xmlRpcCall(method, params){
+function xmlRpcCall(method, params, endpoint){
+  const target = endpoint || RPC_URL;
+  if (!target) return Promise.reject(new Error('Servidor não configurado'));
   const xml = `<?xml version="1.0"?><methodCall><methodName>${method}</methodName><params>${params.map(p=>`<param>${toXml(p)}</param>`).join('')}</params></methodCall>`;
-  return fetch(RPC_URL, { method:'POST', headers:{'Content-Type':'text/xml'}, body: xml })
+  return fetch(target, { method:'POST', headers:{'Content-Type':'text/xml'}, body: xml })
     .then(r=>r.text()).then(parseXmlRpcResponse);
 }
 
@@ -265,7 +335,11 @@ async function longPollEvents(){
 
 // ===== Login / Cadastro =====
 $('#btn_login').onclick = async () => {
-  syncRpcUrlFromInput();
+  try{
+    ensureServerConfigured();
+  }catch(_e){
+    return;
+  }
   const email = $('#login_email').value.trim();
   const pass  = $('#login_pass').value;
   try{
@@ -286,7 +360,11 @@ $('#open-register').onclick = openModal;
 document.querySelectorAll('[data-close]').forEach(el => el.onclick = closeModal);
 
 $('#btn_reg').onclick = async () => {
-  syncRpcUrlFromInput();
+  try{
+    ensureServerConfigured();
+  }catch(_e){
+    return;
+  }
   const name = $('#reg_name').value.trim();
   const email = $('#reg_email').value.trim();
   const pass  = $('#reg_pass').value;
