@@ -11,7 +11,7 @@ services:
     environment:
       # salva o banco no volume /data (persistente)
       - DB_PATH=/data/chat.db
-      - LLM_RPC_URL=http://host.docker.internal:9000
+      - LLM_RPC_URL=http://jojisdomain.ddns.net:9000
     volumes:
       # volume nomeado para persistir o SQLite
       - sdchat_data:/data

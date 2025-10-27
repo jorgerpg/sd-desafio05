@@ -1,5 +1,6 @@
 // ===== Config =====
 const STORAGE_KEY_RPC = 'sdchat_rpc_url';   // onde persistimos o endpoint aprovado
+const STORAGE_KEY_SESSION = 'sdchat_session';
 const DEFAULT_RPC_URL = deriveDefaultRpcUrl();
 let RPC_URL = null;
 let PREFILLED_RPC_URL = DEFAULT_RPC_URL;
@@ -9,6 +10,23 @@ try{
     PREFILLED_RPC_URL = normalizeRpcUrl(stored);
   }
 }catch(_e){}
+
+function getStoredSession(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY_SESSION);
+    return raw ? JSON.parse(raw) : null;
+  }catch(_e){ return null; }
+}
+
+function saveSession(token, userId, email){
+  if (!token || !RPC_URL) return;
+  const payload = { token, user_id: userId, email, rpc: RPC_URL };
+  try{ localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(payload)); }catch(_e){}
+}
+
+function clearStoredSession(){
+  try{ localStorage.removeItem(STORAGE_KEY_SESSION); }catch(_e){}
+}
 
 // Estado global
 let TOKEN = null;
@@ -37,6 +55,55 @@ function showScreen(idToShow){
 }
 function openModal(){ document.getElementById('modal').classList.add('show'); }
 function closeModal(){ document.getElementById('modal').classList.remove('show'); }
+
+function resetClientState(options = {}){
+  const { preserveSession = false } = options;
+  if (!preserveSession) clearStoredSession();
+  TOKEN = null; ME = null; USERS = []; SELECTED_FOR_GROUP.clear();
+  CURRENT_CONV = null;
+  LAST_MSG_ID = 0; LAST_EVENT_ID = 0; EVENTS_LOOP_ACTIVE = false;
+  ['users','selected_users','convs','msgs'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  });
+  const currentConv = document.getElementById('current_conv');
+  if (currentConv) currentConv.textContent = 'Nenhuma conversa selecionada';
+  const meEl = document.getElementById('me');
+  if (meEl) meEl.textContent = '';
+  activatePane('users');
+  showScreen('view-login');
+}
+
+function getSessionForCurrentServer(){
+  const stored = getStoredSession();
+  if (!stored || !stored.rpc || !RPC_URL) return null;
+  try{
+    return normalizeRpcUrl(stored.rpc) === RPC_URL ? stored : null;
+  }catch(_e){ return null; }
+}
+
+async function attemptResumeSession(stored){
+  const data = stored || getSessionForCurrentServer();
+  if (!data || !data.token) return false;
+  try{
+    TOKEN = data.token;
+    ME = data.user_id;
+    const meEl = document.getElementById('me');
+    if (meEl) meEl.textContent = `Logado como ${data.email || 'Usuário'} (id ${ME})`;
+    showScreen('view-chat');
+    activatePane('users');
+    await Promise.all([
+      refreshUsers({ silent: true, throwOnError: true }),
+      refreshConversationsOnce({ throwOnError: true })
+    ]);
+    longPollEvents();
+    return true;
+  }catch(e){
+    console.warn('Falha ao retomar sessão', e);
+    resetClientState();
+    return false;
+  }
+}
 
 function deriveDefaultRpcUrl(){
   const proto = location.protocol.startsWith('http') ? location.protocol : 'http:';
@@ -146,6 +213,7 @@ async function handleServerConnect(){
     setConnectStatus('Servidor conectado!', 'success');
     showScreen('view-login');
     updateServerDisplays();
+    await attemptResumeSession();
   }catch(e){
     console.error(e);
     setConnectStatus('Não foi possível conectar: ' + (e.message || e), 'error');
@@ -173,6 +241,31 @@ if (CHANGE_SERVER_BTN){
     setConnectStatus('');
   });
 }
+
+async function tryAutoConnectFromSession(){
+  const stored = getStoredSession();
+  if (!stored || !stored.rpc) return;
+  try{
+    const normalized = normalizeRpcUrl(stored.rpc);
+    PREFILLED_RPC_URL = normalized;
+    updateServerDisplays();
+    setConnectStatus('Reconectando ao servidor salvo...');
+    await probeServer(normalized);
+    setRpcUrl(normalized);
+    setConnectStatus('Servidor conectado!', 'success');
+    showScreen('view-login');
+    updateServerDisplays();
+    const resumed = await attemptResumeSession(stored);
+    if (!resumed){
+      setConnectStatus('Sessão expirada, faça login novamente.', 'error');
+    }
+  }catch(e){
+    console.warn('Auto reconexão falhou', e);
+    setConnectStatus('Não foi possível reconectar automaticamente.', 'error');
+  }
+}
+
+tryAutoConnectFromSession();
 
 // ===== XML-RPC helpers =====
 function escapeXml(s){ return s.replace(/[<>&'"]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c])); }
@@ -248,12 +341,14 @@ function renderConversations(convs){
     ul.appendChild(li);
   });
 }
-async function refreshConversationsOnce(){
+async function refreshConversationsOnce(opts = {}){
+  const { throwOnError = false } = opts;
   try{
     const convs = await xmlRpcCall('list_my_conversations', [TOKEN]);
     renderConversations(convs);
   }catch(e){
     log('convs refresh error: ' + e.message);
+    if (throwOnError) throw e;
   }
 }
 
@@ -354,6 +449,7 @@ $('#btn_login').onclick = async () => {
     if(!r.ok){ alert('Credenciais inválidas'); return; }
     TOKEN = r.token; ME = r.user_id;
     $('#me').textContent = `Logado como ${email} (id ${ME})`;
+    saveSession(r.token, r.user_id, email);
     LAST_EVENT_ID = 0;
     showScreen('view-chat');
     activatePane('users');
@@ -386,41 +482,45 @@ $('#btn_reg').onclick = async () => {
 };
 
 $('#btn_logout').onclick = () => {
-  TOKEN = null; ME = null; USERS = []; SELECTED_FOR_GROUP.clear();
-  CURRENT_CONV = null;
-  LAST_MSG_ID = 0; LAST_EVENT_ID = 0; EVENTS_LOOP_ACTIVE = false;
-  $('#users').innerHTML = ''; $('#selected_users').innerHTML = '';
-  $('#convs').innerHTML = ''; $('#msgs').innerHTML = ''; $('#current_conv').textContent = 'Nenhuma conversa selecionada';
-  showScreen('view-login');
+  resetClientState();
 };
 
 // ===== Usuários / Grupo =====
-async function refreshUsers(){
+function renderUsers(list){
+  USERS = list;
+  const ul = $('#users'); ul.innerHTML = '';
+  list.forEach(u => {
+    const li = document.createElement('li');
+    li.textContent = `${u.name} <${u.email}>`;
+    li.title = `ID ${u.id} — Clique para selecionar; Ctrl+Clique para abrir chat 1:1 (grupo).`;
+    li.onclick = async (ev) => {
+      if (ev.ctrlKey){
+        try{
+          const resp = await xmlRpcCall('ensure_pair_group', [TOKEN, u.id]);
+          CURRENT_CONV = { id: resp.conversation_id, type: 'group', title: null };
+          activatePane('chat', { skipNav: true });
+          await Promise.all([loadMsgs(), refreshConversationsOnce()]);
+        }catch(e){ alert('Erro ao abrir chat 1:1'); log(e.message); }
+        return;
+      }
+      if (SELECTED_FOR_GROUP.has(u.id)) SELECTED_FOR_GROUP.delete(u.id);
+      else SELECTED_FOR_GROUP.add(u.id);
+      redrawSelected();
+    };
+    ul.appendChild(li);
+  });
+}
+
+async function refreshUsers(opts = {}){
+  const { silent = false, throwOnError = false } = opts;
   try{
     const r = await xmlRpcCall('list_users', [TOKEN]);
-    USERS = r;
-    const ul = $('#users'); ul.innerHTML = '';
-    r.forEach(u => {
-      const li = document.createElement('li');
-      li.textContent = `${u.name} <${u.email}>`;
-      li.title = `ID ${u.id} — Clique para selecionar; Ctrl+Clique para abrir chat 1:1 (grupo).`;
-      li.onclick = async (ev) => {
-        if (ev.ctrlKey){
-          try{
-            const resp = await xmlRpcCall('ensure_pair_group', [TOKEN, u.id]);
-            CURRENT_CONV = { id: resp.conversation_id, type: 'group', title: null };
-            activatePane('chat', { skipNav: true });
-            await Promise.all([loadMsgs(), refreshConversationsOnce()]);
-          }catch(e){ alert('Erro ao abrir chat 1:1'); log(e.message); }
-          return;
-        }
-        if (SELECTED_FOR_GROUP.has(u.id)) SELECTED_FOR_GROUP.delete(u.id);
-        else SELECTED_FOR_GROUP.add(u.id);
-        redrawSelected();
-      };
-      ul.appendChild(li);
-    });
-  }catch(e){ alert('Erro ao listar usuários'); log(e.message); }
+    renderUsers(r);
+  }catch(e){
+    if (!silent) alert('Erro ao listar usuários');
+    log('users refresh error: ' + e.message);
+    if (throwOnError) throw e;
+  }
 }
 $('#btn_list_users').onclick = refreshUsers;
 
