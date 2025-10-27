@@ -14,6 +14,7 @@
         <h1 class="title">SD Chat</h1>
         <p class="subtitle">Informe o endereço do servidor para continuar</p>
 
+        <!-- Campo para definir qual servidor RPC será usado -->
         <label class="input">
           <span>Servidor RPC</span>
           <input id="server_url_connect" type="text" placeholder="http://meu-servidor:8000/RPC2" />
@@ -32,9 +33,11 @@
         <h1 class="title">SD Chat</h1>
         <p class="subtitle">Entre para começar a conversar</p>
 
+        <!-- Indica qual endpoint foi validado e permite trocá-lo -->
         <p class="server-pill">Servidor ativo: <span id="active_server">-</span></p>
         <button id="btn_change_server" class="linklike">Alterar servidor</button>
 
+        <!-- Campos normais de login -->
         <label class="input">
           <span>Email</span>
           <input id="login_email" type="email" placeholder="voce@exemplo.com" />

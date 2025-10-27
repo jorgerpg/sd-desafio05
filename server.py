@@ -10,25 +10,29 @@ import xmlrpc.client
 
 from socketserver import ThreadingMixIn
 
-DB_PATH = os.environ.get("DB_PATH", "chat.db")
-LLM_RPC_URL = os.environ.get("LLM_RPC_URL", "http://localhost:9000")
+DB_PATH = os.environ.get("DB_PATH", "chat.db")  # SQLite file used by the API
+LLM_RPC_URL = os.environ.get("LLM_RPC_URL", "http://localhost:9000")  # Optional bot endpoint
 
 
 def get_db():
+  """Abre uma conexão SQLite com foreign keys habilitados."""
   conn = sqlite3.connect(DB_PATH, check_same_thread=False)
   conn.execute("PRAGMA foreign_keys = ON")
   return conn
 
 
 def hash_pass(password: str, salt: str) -> str:
+  """Aplica SHA-256 com sal para armazenar a senha."""
   return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
 
 
 def now_plus_hours(h=24):
+  """Retorna timestamp UTC no futuro; usado para expiração da sessão."""
   return (datetime.datetime.utcnow() + datetime.timedelta(hours=h)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def ensure_schema(conn):
+  """Cria todas as tabelas necessárias caso não existam."""
   conn.executescript("""
     PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS users (
@@ -118,6 +122,7 @@ class ChatService:
 
   # ---------- Helpers de evento ----------
   def _add_event(self, user_id, ev_type, conversation_id=None, message_id=None):
+    """Registra um evento no banco e acorda quem está em long-poll."""
     self.conn.execute(
         "INSERT INTO events(user_id,type,conversation_id,message_id) VALUES (?,?,?,?)",
         (user_id, ev_type, conversation_id, message_id)
@@ -125,6 +130,7 @@ class ChatService:
     self.broker.notify_user(user_id)
 
   def _fanout_event_message(self, conversation_id, sender_id, message_id):
+    """Dispara evento 'message' para todos os membros exceto o remetente."""
     cur = self.conn.cursor()
     cur.execute("""SELECT user_id FROM conversation_members
                    WHERE conversation_id=? AND active=1""", (conversation_id,))
@@ -135,15 +141,18 @@ class ChatService:
       self._add_event(uid, 'message', conversation_id, message_id)
 
   def _fanout_event_group_added(self, conversation_id, user_ids):
+    """Notifica usuários adicionados a um novo grupo."""
     for uid in set(user_ids):
       self._add_event(uid, 'group_added', conversation_id, None)
 
   def _fanout_event_group_removed(self, conversation_id, user_ids):
+    """Notifica usuários quando um grupo deixa de existir."""
     for uid in set(user_ids):
       self._add_event(uid, 'group_removed', conversation_id, None)
 
   # ---------- Auth ----------
   def register_user(self, email, name, password):
+    """Cadastro básico com validação de e-mail único."""
     with self.lock, self.conn:
       salt = secrets.token_hex(8)
       try:
@@ -156,6 +165,7 @@ class ChatService:
     return {"ok": True}
 
   def login(self, email, password):
+    """Valida credenciais e retorna token de sessão."""
     with self.lock:
       cur = self.conn.cursor()
       cur.execute(
@@ -175,6 +185,7 @@ class ChatService:
       return {"ok": True, "token": token, "user_id": uid}
 
   def _auth(self, token):
+    """Resgata o usuário autenticado a partir do token."""
     cur = self.conn.cursor()
     cur.execute("""SELECT s.user_id
                    FROM sessions s
@@ -195,6 +206,7 @@ class ChatService:
 
   # ---------- Grupos ----------
   def create_group(self, token, title, member_ids):
+    """Cria um grupo incluindo quem solicitou e todos os selecionados."""
     me = self._auth(token)
     members = set(member_ids) | {me}
     with self.lock, self.conn:
@@ -250,6 +262,7 @@ class ChatService:
     return {"ok": True, "conversation_id": cid, "created": True}
 
   def send_group_message(self, token, conversation_id, content):
+    """Insere mensagem, entregando eventos e suportando o comando /motivacao."""
     me = self._auth(token)
     with self.lock, self.conn:
       cur = self.conn.cursor()
@@ -302,6 +315,7 @@ class ChatService:
       return {"ok": True}
 
   def list_my_conversations(self, token):
+    """Lista conversas onde o usuário ainda está ativo."""
     me = self._auth(token)
     cur = self.conn.cursor()
     cur.execute("""
@@ -315,6 +329,7 @@ class ChatService:
     return [{"id": r[0], "type": r[1], "title": r[2], "message_count": r[3]} for r in cur.fetchall()]
 
   def get_messages(self, token, conversation_id, limit=100, offset=0):
+    """Retorna histórico completo limitado/paginado."""
     me = self._auth(token)
     cur = self.conn.cursor()
     cur.execute("""SELECT 1 FROM conversation_members
@@ -334,6 +349,7 @@ class ChatService:
     return {"ok": True, "messages": list(reversed(msgs))}
 
   def get_messages_since(self, token, conversation_id, after_id):
+    """Busca somente mensagens novas a partir de um ID."""
     me = self._auth(token)
     cur = self.conn.cursor()
     cur.execute("""SELECT 1 FROM conversation_members
@@ -354,6 +370,7 @@ class ChatService:
     return {"ok": True, "messages": msgs}
 
   def leave_group(self, token, conversation_id):
+    """Remove o usuário do grupo e apaga a conversa se ficar vazia."""
     me = self._auth(token)
     with self.lock, self.conn:
       # membros ativos ANTES (para notificar remoção ao apagar)
@@ -382,6 +399,7 @@ class ChatService:
   # ---------- Long-poll de eventos ----------
 
   def wait_events(self, token, after_event_id, timeout_ms=30000):
+    """Loop de long-poll que retorna assim que houver eventos novos."""
     me = self._auth(token)
     t_end = datetime.datetime.utcnow() + datetime.timedelta(milliseconds=int(timeout_ms))
 
@@ -441,10 +459,12 @@ class ChatService:
 
 
 def serve(host="0.0.0.0", port=8000):
+  """Inicializa o servidor XML-RPC com CORS habilitado."""
   class RequestHandler(SimpleXMLRPCRequestHandler):
     rpc_paths = ('/RPC2',)
 
     def end_headers(self):
+      # Permite que o front-end rode fora do servidor original.
       self.send_header('Access-Control-Allow-Origin', '*')
       self.send_header('Access-Control-Allow-Headers', 'content-type')
       self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -471,7 +491,7 @@ def serve(host="0.0.0.0", port=8000):
 
     server.register_function(service.create_group, 'create_group')
     server.register_function(service.ensure_pair_group,
-                             'ensure_pair_group')  # novo
+                             'ensure_pair_group')
 
     server.register_function(service.send_group_message, 'send_group_message')
     server.register_function(

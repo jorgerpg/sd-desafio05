@@ -1,5 +1,5 @@
 // ===== Config =====
-const STORAGE_KEY_RPC = 'sdchat_rpc_url';
+const STORAGE_KEY_RPC = 'sdchat_rpc_url';   // onde persistimos o endpoint aprovado
 const DEFAULT_RPC_URL = deriveDefaultRpcUrl();
 let RPC_URL = null;
 let PREFILLED_RPC_URL = DEFAULT_RPC_URL;
@@ -99,6 +99,7 @@ NAV_BTNS.forEach(btn => {
 activatePane('users');
 
 function updateServerDisplays(){
+  // Mantém inputs e badges sincronizados com o último endpoint conhecido.
   const current = RPC_URL || PREFILLED_RPC_URL || DEFAULT_RPC_URL;
   if (CONNECT_INPUT && document.activeElement !== CONNECT_INPUT){
     CONNECT_INPUT.value = current;
@@ -110,6 +111,7 @@ function updateServerDisplays(){
 updateServerDisplays();
 
 function setConnectStatus(msg, type='muted'){
+  // Mostra feedback textual no cartão de conexão.
   if (!CONNECT_STATUS) return;
   CONNECT_STATUS.textContent = msg || '';
   CONNECT_STATUS.classList.remove('error', 'success');
@@ -119,6 +121,7 @@ function setConnectStatus(msg, type='muted'){
 setConnectStatus('');
 
 function ensureServerConfigured(){
+  // Garante que o usuário já passou pela etapa de conexão.
   if (!RPC_URL){
     alert('Configure o servidor antes de prosseguir.');
     showScreen('view-connect');
@@ -127,10 +130,12 @@ function ensureServerConfigured(){
 }
 
 async function probeServer(endpoint){
+  // Usa system.listMethods como ping rápido.
   await xmlRpcCall('system.listMethods', [], endpoint);
 }
 
 async function handleServerConnect(){
+  // Tenta validar e salvar o servidor informado na tela inicial.
   if (!CONNECT_INPUT || !CONNECT_BUTTON) return;
   const normalized = normalizeRpcUrl(CONNECT_INPUT.value);
   CONNECT_BUTTON.disabled = true;
@@ -215,6 +220,7 @@ function parseXmlRpcResponse(xmlText){
   return fromXmlValue(value);
 }
 function xmlRpcCall(method, params, endpoint){
+  // Monta payload XML-RPC manualmente para evitar libs extras.
   const target = endpoint || RPC_URL;
   if (!target) return Promise.reject(new Error('Servidor não configurado'));
   const xml = `<?xml version="1.0"?><methodCall><methodName>${method}</methodName><params>${params.map(p=>`<param>${toXml(p)}</param>`).join('')}</params></methodCall>`;

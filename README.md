@@ -40,10 +40,14 @@ distribuidos-groupchat/
 docker compose up -d --build
 ```
 
-O servidor XML-RPC sobe na porta **8000**, e o front-end HTTP (estático) na **8080**.
+O compose atual entrega:
 
-> 🌐 Acesse o chat em
-> `http://localhost:8080`
+| Porta | Serviço     | Descrição                                          |
+| ----- | ----------- | -------------------------------------------------- |
+| 8000  | `server.py` | API XML-RPC (autentica, cria grupos, envia msgs).  |
+| 8080  | `static/`   | Servidor estático simples para rodar o client web. |
+
+> 🌐 **Fluxo do cliente:** ao abrir `http://localhost:8080`, primeiro informe a URL do servidor (ex.: `http://localhost:8000/RPC2`). Só depois da conexão bem-sucedida o formulário de login/cadastro é liberado.
 
 2️⃣ **Banco de dados**
 
@@ -77,8 +81,9 @@ volumes:
 ## 💻 Front-end (cliente web)
 
 * Implementado em **HTML + CSS + JS puro**.
-* Usa `fetch` para enviar chamadas XML-RPC.
-* Interface responsiva e clara.
+* Pode rodar em **qualquer máquina** – basta servir o conteúdo de `static/` (por exemplo `python3 -m http.server`).
+* A nova **tela de conexão** valida o endpoint RPC (`system.listMethods`) antes de liberar login/cadastro, evitando erro de configuração.
+* Persistimos o endpoint escolhido no `localStorage`, e o usuário pode alterá-lo a qualquer momento pelo link “Alterar servidor”.
 
 ### 🧭 Atalhos e dicas
 
@@ -87,8 +92,10 @@ volumes:
 | **Enter**                           | Envia a mensagem.                                     |
 | **Shift + Enter**                   | Quebra de linha.                                      |
 | **Ctrl + Clique** em um usuário     | Abre ou cria um grupo 1:1.                            |
-| **“Sair do grupo”**                 | Sai do grupo; o grupo é excluído se ficar vazio.      |
-| **/moti** (ou /motivacao, /inspire) | Dispara o MotivaBot se o servidor LLM estiver online. |
+| **Excluir grupo**                   | Remove você e apaga o grupo se for o último membro.   |
+| **/moti** (ou /motivacao)           | Dispara o MotivaBot se o servidor LLM estiver online. |
+
+🚨 **Importante (HTTP vs HTTPS):** o cliente é carregado via HTTP simples. Se hospedá-lo em HTTPS (ex.: Codespaces), será necessário expor o servidor também em HTTPS ou usar um proxy que termine TLS; do contrário o navegador bloqueará as requisições (“Failed to fetch”).
 
 ---
 
@@ -184,14 +191,19 @@ Long-poll mantém o navegador sincronizado sem precisar de WebSocket.
 
 ## 🧰 Desenvolvimento local (sem Docker)
 
+### Servidor RPC
 ```bash
 export DB_PATH=chat.db
-python3 server.py
+python3 server.py  # sobe em 0.0.0.0:8000/RPC2
 ```
 
-Depois acesse:
-`http://localhost:8080`
+### Cliente web
+Em outra aba/host:
+```bash
+cd static
+python3 -m http.server 8080
+```
 
-(use um servidor estático ou `python3 -m http.server 8080` dentro da pasta `static`).
-# sd-desafio05
-# sd-desafio05
+Abra `http://localhost:8080`, informe `http://localhost:8000/RPC2` na tela de conexão e prossiga com login/cadastro.
+
+> 💡 Para rodar o client em outra máquina, basta expor a porta 8000 do servidor e apontar o campo “Servidor RPC” para `http://SEU_IP:8000/RPC2`.
