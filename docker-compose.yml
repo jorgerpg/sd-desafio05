@@ -1,0 +1,31 @@
+services:
+  sd-chat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sd-chat
+    # expõe as duas portas:
+    ports:
+      - "8000:8000" # XML-RPC (server.py)
+      - "8080:8080" # UI estática (python -m http.server)
+    environment:
+      # salva o banco no volume /data (persistente)
+      - DB_PATH=/data/chat.db
+      - LLM_RPC_URL=http://host.docker.internal:9000
+    volumes:
+      # volume nomeado para persistir o SQLite
+      - sdchat_data:/data
+      - ./:/app
+      # (opcional, modo dev) descomente para editar estáticos sem rebuild:
+      # - ./static:/app/static:ro
+      # - ./server.py:/app/server.py:ro
+      # - ./start.sh:/app/start.sh:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/RPC2"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  sdchat_data:

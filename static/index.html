@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <title>SD Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ===== Tela de Login ===== -->
+  <main id="view-login" class="screen visible">
+    <div class="container-center">
+      <div class="card auth-card">
+        <h1 class="title">SD Chat</h1>
+        <p class="subtitle">Entre para começar a conversar</p>
+
+        <label class="input">
+          <span>Servidor</span>
+          <input id="server_url" type="text" placeholder="http://meu-servidor:8000/RPC2" />
+        </label>
+
+        <label class="input">
+          <span>Email</span>
+          <input id="login_email" type="email" placeholder="voce@exemplo.com" />
+        </label>
+
+        <label class="input">
+          <span>Senha</span>
+          <input id="login_pass" type="password" placeholder="••••••••" />
+        </label>
+
+        <button id="btn_login" class="btn primary">Entrar</button>
+
+        <div class="muted">
+          Ainda não tem conta?
+          <button id="open-register" class="linklike">Criar conta</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===== Tela do Chat ===== -->
+  <main id="view-chat" class="screen">
+    <header class="topbar">
+      <div class="brand">SD Chat</div>
+      <div class="me" id="me"></div>
+    </header>
+
+    <div class="chat-shell">
+      <section class="pane active" data-pane="users" id="pane-users">
+        <div class="pane-header">
+          <div>
+            <p class="eyebrow">Explorar</p>
+            <h3>Usuários</h3>
+          </div>
+          <button id="btn_list_users" class="btn small">Atualizar</button>
+        </div>
+        <p class="pane-helper">Clique para selecionar pessoas para um novo grupo ou use <b>Ctrl+Clique</b> para abrir um chat 1:1 instantâneo.</p>
+        <ul id="users" class="list scrollable"></ul>
+
+        <div class="divider"></div>
+        <div class="pane-header">
+          <div>
+            <p class="eyebrow">Rápido</p>
+            <h3>Novo grupo</h3>
+          </div>
+        </div>
+        <input id="group_title" class="input-plain" placeholder="Nome do grupo" />
+        <div class="hint">Usuários selecionados:</div>
+        <div id="selected_users" class="chips"></div>
+        <button id="btn_create_group" class="btn primary full">Criar grupo</button>
+      </section>
+
+      <section class="pane" data-pane="convs" id="pane-convs">
+        <div class="pane-header">
+          <div>
+            <p class="eyebrow">Histórico</p>
+            <h3>Minhas conversas</h3>
+          </div>
+          <button id="btn_list_convs" class="btn small">Atualizar</button>
+        </div>
+        <ul id="convs" class="list scrollable"></ul>
+      </section>
+
+      <section class="pane pane-chat" data-pane="chat" id="pane-chat">
+        <div class="chat-body">
+          <div class="chat-heading">
+            <div>
+              <p class="eyebrow">Conversa atual</p>
+              <div id="current_conv" class="conv-title">Nenhuma conversa selecionada</div>
+            </div>
+            <button id="btn_delete_group" class="btn danger ghost" title="Remove você e exclui o grupo se for o último integrante">Excluir grupo</button>
+          </div>
+          <div id="msgs" class="messages"></div>
+        </div>
+        <div class="chat-input">
+          <input id="msg_text" class="input-plain" placeholder="Digite sua mensagem..." />
+          <button id="btn_send" class="btn primary">Enviar</button>
+        </div>
+      </section>
+    </div>
+
+    <footer class="bottom-nav">
+      <button class="nav-btn active" data-pane-target="users">Usuários</button>
+      <button class="nav-btn" data-pane-target="convs">Conversas</button>
+      <button class="nav-btn nav-danger" id="btn_logout">Sair</button>
+    </footer>
+  </main>
+
+  <!-- ===== Modal de Cadastro ===== -->
+  <div id="modal" class="modal">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Criar conta</h3>
+        <button class="icon-btn" data-close aria-label="Fechar">✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="input">
+          <span>Nome</span>
+          <input id="reg_name" placeholder="Seu nome completo" />
+        </label>
+        <label class="input">
+          <span>Email</span>
+          <input id="reg_email" type="email" placeholder="voce@exemplo.com" />
+        </label>
+        <label class="input">
+          <span>Senha</span>
+          <input id="reg_pass" type="password" placeholder="••••••••" />
+        </label>
+      </div>
+      <div class="modal-footer">
+        <button class="btn ghost" data-close>Cancelar</button>
+        <button id="btn_reg" class="btn primary">Criar conta</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="client.js"></script>
+</body>
+</html>
